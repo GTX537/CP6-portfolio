@@ -1,0 +1,160 @@
+# ============================================================
+# .NET / Visual Studio / Rider
+# ============================================================
+bin/
+obj/
+out/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+ARM/
+ARM64/
+
+# Build results & publish
+[Dd]ebugPublic/
+[Rr]eleases/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+*.userprefs
+
+# Visual Studio cache
+.vs/
+.vscode/*.log
+
+# Roslyn cache
+*.cache
+
+# JetBrains Rider / ReSharper
+.idea/
+*.DotSettings.user
+
+# Publish / packages
+publish/
+packages/
+*.nupkg
+
+# Test / coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
+[Cc]overlet*
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+PublishScripts/
+
+# MSBuild logs
+msbuild.log
+msbuild.err
+msbuild.wrn
+
+# ============================================================
+# Node.js / Vite / Vue
+# ============================================================
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ============================================================
+# IDE / Editor
+# ============================================================
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+
+# ============================================================
+# OS
+# ============================================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ============================================================
+# Secrets / env (敏感配置)
+# ============================================================
+*.pfx
+*.key
+*.pem
+appsettings.Development.json
+appsettings.Local.json
+.env
+.env.local
+.env.*.local
+
+# ============================================================
+# Generated / transient dev artifacts
+# ============================================================
+openapi.json
+backend.log
+
+# Claude Code worktrees & temp probes
+.claude/worktrees/
+tmp-*.js
+docs/_manual_render/
+
+# Cloudflare Tunnel 凭证（密钥，禁止提交）— 整个目录都忽略
+cloudflared-docker/
+
+# Claude 临时工作目录与 Office 锁文件
+tmp/
+~$*
+
+# ============================================================
+# Secrets / Local overrides — 绝不提交
+# ============================================================
+.env
+.env.local
+.env.*.local
+appsettings.Local.json
+appsettings.Production.json
+appsettings.*.local.json
+*.pfx
+*.key
+*.pem
+secret.local.yaml
+secrets.local.yaml
+
+# Generic credential files
+**/credentials.json
+**/credentials.yaml
+**/*.credentials
+**/*-credentials.json
+
+# 部署脚本（含真实服务器/IP/SSH）— 各 dev 本地维护，不入仓
+deploy-to-server.ps1
+deploy-to-*.ps1
+deploy-to-*.sh
+redeploy-*.bat
+redeploy-*.ps1
+start-tunnel.bat
+
+# 根目录运行日志
+/backend.err.log
+/frontend.err.log
+/frontend.log
+/cloudflared.log
+/cloudflared.err.log
+/redeploy.log
+/redeploy.err.log
+*.err.log
