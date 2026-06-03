@@ -14,6 +14,10 @@ using CP6.WebApi.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 本地凭证覆盖（appsettings.Local.json 在 .gitignore，绝不入仓库）。
+// 加载顺序：appsettings.json → appsettings.{Env}.json → appsettings.Local.json → env vars
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 // 1. 注册控制器（全局注册 OperLogFilter）
 builder.Services.AddScoped<OperLogFilter>();
 builder.Services.AddControllers(options =>
