@@ -19,7 +19,6 @@ data:
 
   # appsettings 覆盖（K8S 中服务名 = Service name）
   # K8S Service 自动解析：cp6-db → Pod IP
-  # 注意：密码不在 ConfigMap，从 Secret 注入（见 secret.yaml + deployment env）
   ConnectionStrings__DefaultConnection: "Server=cp6-db;Database=CP6DB;User Id=sa;Password=__INJECT_FROM_SECRET__;TrustServerCertificate=True;MultipleActiveResultSets=True"
   ConnectionStrings__Redis: "cp6-redis:6379"
 

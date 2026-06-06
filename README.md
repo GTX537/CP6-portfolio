@@ -11,7 +11,7 @@ CP6 是基于 **.NET 8/10 + Vue 3** 的现代化 ERP / MES / WMS 一体化系统
 | 实时通信 | SignalR |
 | 消息队列 | RabbitMQ + Kafka |
 | 容器 | Docker Compose / Kubernetes |
-| 测试 | xUnit + Moq（192 用例） |
+| 测试 | xUnit + Moq（**282 用例**） |
 
 ## 子系统
 
@@ -21,22 +21,34 @@ CP6 是基于 **.NET 8/10 + Vue 3** 的现代化 ERP / MES / WMS 一体化系统
 
 ## 跨模块闭环（Bridge Hook）
 
-CP6 通过 3 个对称的 Bridge Hook 接口实现 ERP↔MES↔WMS 自动联动，遵循 **Best-Effort + 冪等 + appsettings 可禁用** 设计原则：
+CP6 通过 4 个对称的 Bridge Hook 接口实现 ERP↔MES↔WMS 自动联动，遵循 **Best-Effort + 冪等 + appsettings 可禁用 + IntegrationEvent 持久化** 设计原则：
 
 | 接口 | 触发 → 动作 |
 |---|---|
 | `IMesBridgeHook` | ERP 受注作成 → MES 製造指図 自动展开 |
 | `IWmsBridgeHook` | MES 指図発行 → WMS 材料出庫指示 / 受注作成 → 出荷指示 / 全工程完了 → 完成品入庫 |
-| `IErpBridgeHook` | WMS 出荷確定 → ERP 受注 出荷実績回写 |
+| `IErpBridgeHook` | WMS 出荷確定 → ERP 受注 出荷実績回写 / **WMS RMA 確定 → ERP CreditNote** (Phase 10a) |
+| `IOrderCancelBridgeHook` (**Phase 6**) | ERP 受注取消 → 反向級联 MES WO / WMS Outbound 取消 |
 
 详见 [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) §2.3。
 
+## Phase 6-10 改进（最近迭代）
+
+| Phase | 内容 | 文档 |
+|---|---|---|
+| Phase 6 | 受注取消反向級联 + IntegrationEvent 持久化 + Retry Worker + DeadLetter 告警 | [`docs/PHASE6_SPEC.md`](docs/PHASE6_SPEC.md) |
+| Phase 7 | Stock QC 状态管理（FAILED/HOLD 自动阻止出货）+ QualityInspection NG 自动联动 | — |
+| Phase 8 | 受注済未出荷 Dashboard widget + CSV 导出 | — |
+| Phase 9 | 材料欠品反流（OutboundService 检测短缺 → T_MaterialShortage + SignalR 告警） | — |
+| Phase 10a | RMA → ERP CreditNote 自动回写（OrderDetail.ReturnedQty 累计） | — |
+| Phase 10b | Bridge Hook Health Monitor（24h 成功率 + DLQ Dashboard + 手动补偿） | — |
+
 ## 项目文档
 
-- [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) — 代码架构 + 业务流 + 模块清单 + ER 图（388 行）
-- [`docs/PROJECT_IMPROVEMENT_PLAN.md`](docs/PROJECT_IMPROVEMENT_PLAN.md) — 4 维度 × 11 gap 的改进路线（180 行）
-- [`docs/PHASE6_SPEC.md`](docs/PHASE6_SPEC.md) — Phase 6 (Order Cancel 链 + IntegrationEvent 持久化) 完整可执行规格（616 行）
-- [`DEVELOPMENT-GUIDE.md`](DEVELOPMENT-GUIDE.md) — 教程视角，从零搭建开发环境
+- [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) — 代码架构 + 业务流 + 模块清单 + ER 图
+- [`docs/PROJECT_IMPROVEMENT_PLAN.md`](docs/PROJECT_IMPROVEMENT_PLAN.md) — 4 维度 × 11 gap 的改进路线
+- [`docs/PHASE6_SPEC.md`](docs/PHASE6_SPEC.md) — Phase 6 完整可执行规格
+- [`DEVELOPMENT-GUIDE.md`](DEVELOPMENT-GUIDE.md) — 从零搭建开发环境
 
 ## 快速开始
 
@@ -64,7 +76,7 @@ docker-compose up -d
 ### 测试
 
 ```bash
-dotnet test          # 后端单元测试（192 用例）
+dotnet test          # 后端单元测试（282 用例）
 cd cp6.web && npm run e2e   # 前端 Playwright e2e
 ```
 
@@ -73,9 +85,9 @@ cd cp6.web && npm run e2e   # 前端 Playwright e2e
 ```
 CP6/
 ├── CP6.Entity/      # 实体层 — DomainModels + DTOs
-├── CP6.Core/        # 核心层 — Services + BridgeHooks + EFDbContext
-├── CP6.WebApi/      # API 层 — Controllers + SignalR + Filters
-├── CP6.Tests/       # 测试 — xUnit + Moq
+├── CP6.Core/        # 核心层 — Services + BridgeHooks + EFDbContext + Migrations
+├── CP6.WebApi/      # API 层 — Controllers + SignalR + BackgroundServices + Filters
+├── CP6.Tests/       # 测试 — xUnit + Moq（282 用例）
 ├── cp6.web/         # 前端 — Vue 3 + TS + Element Plus
 ├── docs/            # 文档 — 架构 / 规格 / i18n 种子 SQL
 ├── k8s/             # Kubernetes 清单

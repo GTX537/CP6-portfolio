@@ -113,9 +113,17 @@
           </template>
         </el-table-column>
         <el-table-column prop="slipNote" :label="t('伝票備考')" min-width="160" sortable="custom" />
-        <el-table-column :label="t('操作')" width="100" align="center" fixed="right">
+        <el-table-column :label="t('操作')" width="160" align="center" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="goDetail(row)">詳細</el-button>
+            <el-button
+              link
+              type="danger"
+              size="small"
+              @click.stop="openCancelDialog(row)"
+            >
+              {{ t('sales.cancel.btn') }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -173,6 +181,14 @@
         @size-change="search"
       />
     </el-card>
+
+    <!-- Phase 6 受注取消ダイアログ -->
+    <OrderCancelDialog
+      v-if="cancelDialogVisible"
+      v-model="cancelDialogVisible"
+      :web-order-no="cancelTargetWebOrderNo"
+      @cancelled="onCancelled"
+    />
   </div>
 </template>
 
@@ -185,6 +201,7 @@ import { Download, Check } from '@element-plus/icons-vue'
 import { orderApi } from '@/api/order'
 import type { OrderQueryDto, OrderListItemDto } from '@/types/order'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import OrderCancelDialog from './OrderCancelDialog.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -208,6 +225,21 @@ const rows = ref<OrderListItemDto[]>([])
 const total = ref(0)
 const loading = ref(false)
 const exporting = ref(false)
+
+// Phase 6 取消ダイアログ
+const cancelDialogVisible = ref(false)
+const cancelTargetWebOrderNo = ref('')
+
+function openCancelDialog(row: OrderListItemDto) {
+  cancelTargetWebOrderNo.value = row.webOrderNo
+  cancelDialogVisible.value = true
+}
+
+function onCancelled() {
+  ElMessage.success(t('sales.cancel.successMsg'))
+  // 重新查询列表
+  search()
+}
 
 async function search() {
   loading.value = true

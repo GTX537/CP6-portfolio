@@ -154,6 +154,8 @@ IF NOT EXISTS (SELECT 1 FROM Sys_Menus WHERE MenuId = 480)
 
 IF NOT EXISTS (SELECT 1 FROM Sys_Menus WHERE MenuId = 481)
     INSERT INTO Sys_Menus VALUES (481, N'帳票センター',         N'/wms/report-center',      N'Printer',        480, 481, 1, SYSDATETIME());
+IF NOT EXISTS (SELECT 1 FROM Sys_Menus WHERE MenuId = 482)
+    INSERT INTO Sys_Menus VALUES (482, N'連携ヘルス監視',       N'/wms/bridge-health',      N'Monitor',        480, 482, 1, SYSDATETIME());
 
 /* ------------------------------------------------------------
  * 7. 管理者ロール (RoleId=1) に全 WMS メニューを付与

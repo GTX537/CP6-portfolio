@@ -36,7 +36,7 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: cp6-mq
     environment:
-      RABBITMQ_DEFAULT_USER: "${RABBITMQ_USER:-cp6}"
+      RABBITMQ_DEFAULT_USER: "cp6"
       RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}"
     ports:
       - "5672:5672"
@@ -55,10 +55,12 @@ services:
     image: apache/kafka:3.8.0
     container_name: cp6-kafka
     environment:
+      # KRaft 模式（无 ZooKeeper），单节点 broker + controller 合一
       KAFKA_NODE_ID: "1"
       KAFKA_PROCESS_ROLES: "broker,controller"
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@cp6-kafka:9093"
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      # 双 listener：PLAINTEXT 给 compose 内部（cp6-api），EXTERNAL 给宿主机 dotnet run
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:29092"
       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://cp6-kafka:9092,EXTERNAL://localhost:29092"
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
@@ -87,10 +89,6 @@ services:
     container_name: cp6-api
     environment:
       ASPNETCORE_ENVIRONMENT: "Docker"
-      # 通过 ${...} 注入到容器（appsettings.Docker.json 也用占位符）
-      ConnectionStrings__DefaultConnection: "Server=cp6-db;Database=CP6DB;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;MultipleActiveResultSets=True"
-      RabbitMQ__Password: "${RABBITMQ_PASSWORD}"
-      JWT__Secret: "${JWT_SECRET:?Set JWT_SECRET (>=32 chars) in .env}"
     ports:
       - "9991:5000"
     depends_on:
@@ -115,9 +113,17 @@ services:
       - cp6-api
     restart: unless-stopped
 
-  # NOTE: cloudflared 隧道服务在公开版本中移除。
-  # 如需启用，参考 https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
-  # 并在本地添加 cloudflared-docker/ 目录（.gitignore 已忽略）。
+  # 内网穿透：cloudflared 连接器（容器内出网，绕过宿主机 TUN 代理）
+  cp6-cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cp6-cloudflared
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared-docker:/etc/cloudflared:ro
+    depends_on:
+      - cp6-web
+      - cp6-api
+    restart: unless-stopped
 
 volumes:
   cp6-db-data:

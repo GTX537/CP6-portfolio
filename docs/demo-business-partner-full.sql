@@ -8,6 +8,7 @@
  *
  *   実行: sqlcmd -S "localhost\KOUSQLSERVER" -d CP6DB -E ^
  *               -i "D:\CP6\docs\demo-business-partner-full.sql" -b
+ *   Docker: docker cp -> docker exec で同様に実行可
  * ===================================================================== */
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
