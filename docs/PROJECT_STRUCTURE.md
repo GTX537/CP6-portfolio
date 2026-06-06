@@ -44,7 +44,7 @@ cp6.web     ─(HTTP + SignalR WebSocket)→  CP6.WebApi
 | DB | SQL Server 2022 | 关系型存储 |
 | 前端 | Vue 3.5 + TS + Element Plus 2.13 | 组件化 SPA |
 | 国际化 | DB 驱动 `Sys_Langs` 表（ZhCN / ZhTW / En / Ja / Ko 五语） | 字典式 i18n |
-| 部署 | Docker Compose + K8s 1.35 + cloudflared | cp6.uk 公网访问 |
+| 部署 | Docker Compose + K8s 1.35 + cloudflared 隧道 | 反向代理公网访问 |
 
 ---
 
