@@ -44,7 +44,7 @@ cp6.web     ─(HTTP + SignalR WebSocket)→  CP6.WebApi
 | DB | SQL Server 2022 | 关系型存储 |
 | 前端 | Vue 3.5 + TS + Element Plus 2.13 | 组件化 SPA |
 | 国际化 | DB 驱动 `Sys_Langs` 表（ZhCN / ZhTW / En / Ja / Ko 五语） | 字典式 i18n |
-| 部署 | Docker Compose + K8s 1.35 + cloudflared 隧道 | 反向代理公网访问 |
+| 部署 | Docker Compose + K8s 1.35 + cloudflared | cp6.uk 公网访问 |
 
 ---
 
@@ -394,6 +394,123 @@ erDiagram
 | 排查 ERP↔MES↔WMS 联动问题 | 本文档 §2.3 三个 Hook + `appsettings*.json` 的 `*Bridge:Enabled` 配置 |
 | 加翻译 / 加菜单 | `docs/wms-menu-seed.sql` `docs/wms-*-i18n-seed.sql` 既有 MERGE 模板 |
 | 看 ER 全貌 | 本文档 §五 + `docs/MSBBWM_ER_Diagram.md` |
+| 看 Phase 6-10 整体改进 | 本文档 §八 + `docs/PROJECT_IMPROVEMENT_PLAN.md` |
+
+---
+
+## 八、Phase 6-10 改进汇总（生产硬化）
+
+> 截至 2026-06-06，CP6 在 Phase 1-5 闭环基础上完成了 5 期生产硬化迭代。**测试总数 192 → 282**（+90），代码新增 ~6000 行。
+
+### 8.1 改进路线一览
+
+| Phase | 范围 | 核心产物 | 测试增量 |
+|---|---|---|---|
+| **Phase 6** | 受注取消反向級联 + Bridge Hook 持久化基盤 | `IOrderCancelBridgeHook` / `BridgeHookBase` / `IntegrationEventRetryWorker` / `IDeadLetterNotifier` | +33 |
+| **Phase 7** | QC 状态阻止出货 + QualityInspection 自动联动 | `Stock.QcStatus` + `IStockQcService` + Allocate 过滤 + QI NG 自动标记 | +13 |
+| **Phase 8** | 受注済未出荷 Dashboard + CSV 导出 | `IUnshippedOrderService` + Dashboard widget + RFC 4180 CSV | +13 |
+| **Phase 9** | 材料欠品反流（不抛异常 → 写表 + SignalR 告警） | `MaterialShortage` 表 + `IMaterialShortageService` + Outbound 改造 | +6 |
+| **Phase 10a** | RMA → ERP CreditNote 自动回写 | `IErpBridgeHook.OnReturnConfirmedAsync` + `CreditNote` 实体 + `OrderDetail.ReturnedQty` | +4 |
+| **Phase 10b** | Bridge Hook Health Monitor（24h 成功率 + DLQ + 手动补偿） | `IBridgeHealthService` + `BridgeHealthView.vue` + Compensate endpoint | +4 |
+
+### 8.2 Phase 6 — 受注取消反向級联（核心架构升级）
+
+**问题**：原闭环只覆盖正路径，客户取消订单后已展开的 WO/Outbound 不会反向解锁，造成库存幽灵引当。
+
+**方案**：
+- 加 `Order.OrderStatus` lifecycle string（CONFIRMED / IN_PRODUCTION / SHIPPED / CANCELLED / PARTIALLY_CANCELLED），与既有 mc転送 int Status 独立
+- `IOrderService.CancelAsync(no, reason, force, user)` 状态机：Rejected / NeedsDecision / Cancelled / PartiallyCancelled
+- `IOrderCancelBridgeHook` 两段模式：force=false 探查 / force=true 实施
+- 实施顺序：先 OutboundOrder 取消（自动 UNRSV）→ 再 WorkOrder 取消 → 最后 Order 头取消
+- 前端 `OrderCancelDialog.vue` 三步流：理由输入 → 探查结果 → 半路状态强制确认
+
+**Bridge Hook 持久化基盤（4 个 hooks 共享）**：
+- 新表 `T_IntegrationEvent`：Status (PENDING/SUCCESS/SKIPPED/FAILED/DEAD/COMPENSATED), Attempts, NextRetryAt, CorrelationId, PayloadJson
+- `BridgeHookBase.PersistEventAsync` 在每个 hook 调用末尾写记录
+- `IntegrationEventRetryWorker` BackgroundService 每 60s 扫 Failed → `IIntegrationEventDispatcher` 反射路由 → 重跑原 hook
+- 失败 5 次自动转 DeadLetter → `IDeadLetterNotifier` 双通道告警（SignalR `WmsHub` + `Sys_OperLog.IsAlert=true`）
+
+### 8.3 Phase 7 — QC 阻止出货
+
+**问题**：QC NG 检查只起 `DefectRecord` 记录，但 NG 品仍可被 Allocate 出货。
+
+**方案**：
+- `Stock.QcStatus`（PENDING/PASSED/FAILED/HOLD，默认 PENDING）
+- `OutboundService.AllocateAsync` 候选过滤：`s.QcStatus != FAILED && s.QcStatus != HOLD`
+- `IStockQcService.SetStockQcStatusAsync(stockId, status, reason)` 手动维护
+- `IStockQcService.MarkLinkedStockByWorkOrderAsync(woNo, status)` 按 WO 批量
+- **自动联动**：`QualityInspectionService.CreateAsync` 末尾，OverallResult=2 (NG) → 自动调 MarkLinkedStockByWorkOrderAsync(FAILED)
+- 前端 `StockQueryView.vue` 加「QC 状态」列 + 设置弹窗（4 个状态 radio + 理由）
+
+### 8.4 Phase 8 — 受注済未出荷 Dashboard
+
+**问题**：营业看不到「我的客户哪几单还没发」。
+
+**方案**：
+- `IUnshippedOrderService.SearchAsync` 查 `Order.ShipStatus < 9 AND OrderStatus NOT IN (SHIPPED, CANCELLED)`，join BusinessPartner + 聚合 WorkOrder.Status + OutboundOrder.Status
+- Dashboard widget 列：受注号 / 客户 / 交期（超期红 tag）/ Status / 数量 进度 / MES summary / WMS summary
+- `IUnshippedOrderService.ExportCsvAsync` RFC 4180 引号转义 + UTF-8 BOM
+- **重要踩坑**：widget loadUnshipped() 不能放在 `loadData()` 里 —— 会和 `NewOperLog` SignalR 互推形成正反馈循环。独立 `onMounted` 触发 + 手动 refresh 按钮。
+
+### 8.5 Phase 9 — 材料欠品反流
+
+**问题**：MES 指図発行时 WMS 引当不足直接抛 `InsufficientStockException`，看不到结构化的「缺什么单」清单。
+
+**方案**：
+- 新表 `T_MaterialShortage`（WorkOrderNo / RelatedOutboundNo / ProductCd / RequiredQty / AvailableQty / Status: OPEN/RESOLVED/DISMISSED）
+- `OutboundService.AllocateAsync` 当 `header.OutboundType == Material` 且引当不足 → **不抛**，改为写 `T_MaterialShortage` + SignalR `MaterialShortageDetected` 推送 + header.Status = PartialAllocated
+- **关键边界**：`OutboundType == Shipping` 仍然抛异常（保持出荷的强一致语义不被破坏）
+- `IMaterialShortageService` Resolve/Dismiss API 让运维手动关闭单
+
+### 8.6 Phase 10a — RMA → ERP CreditNote 闭环
+
+**问题**：RMA 在 WMS 端入库后，ERP 的应收账款不自动调整。
+
+**方案**：
+- `IErpBridgeHook` 加 `OnReturnConfirmedAsync(rmaNo, userName)` 方法
+- `RmaService` 确認後 best-effort 调用 bridge
+- 新表 `T_CreditNote`（Type: REFUND/EXCHANGE/SCRAP，含 RmaNo / WebOrderNo / Qty / Amount）
+- `OrderDetail.ReturnedQty` 累计字段
+- 通过 `RmaHeader.OriginalShippingNo → OutboundOrder.WebOrderNo` 解析关联受注
+- 全程经 `BridgeHookBase.PersistEventAsync` 写 IntegrationEvent
+
+### 8.7 Phase 10b — Bridge Hook Health Monitor
+
+**问题**：Bridge Hook 失败有了 DLQ + 告警但缺集中视图。
+
+**方案**：
+- `IBridgeHealthService.GetMetricsAsync` 从 `T_IntegrationEvent` 聚合最近 24h：每个 Hook 的 Total / Success / Skipped / Failed / Dead / 成功率
+- 当前队列深度（Status=Failed 且 NextRetryAt 已到的数量）
+- 最近 10 条 DeadLetter 详情
+- 前端 `/wms/bridge-health` 独立页面：3 KPI 卡片 + 每 Hook 一行表格 + DLQ 列表 + 「Mark Compensated」按钮（30s 自动刷新）
+
+### 8.8 测试矩阵覆盖
+
+```
+Phase 6 (S2-S7)       33 个   测试 192 → 225
+Phase 7 (Backend)     10 个   测试     → 235
+Phase 8 (Backend)      9 个   测试     → 244
+T1  Phase 7+8 E2E      2 个   测试     → 246  ← 注：T1 codex 实际报告 +4 包含 PartiallyCancelled 等扩展
+T2  Auto QC link       3 个   测试     → 263
+T3  CSV export         4 个   测试     → 267
+T4  Bridge Health      4 个   测试     → 270
+T5  Material shortage  6 个   测试     → 278
+T6  RMA Credit Note    4 个   测试     → 282
+```
+
+**全部 dotnet test 通过，没有破坏既有 Phase 1-5 行为**。
+
+### 8.9 部署 / 回滚要点
+
+| 项 | 操作 |
+|---|---|
+| 应用 Phase 6 schema | `dotnet ef database update`（KOUSQLSERVER + docker cp6-db 两边） |
+| 启用 Phase 6 Worker | `appsettings.json.IntegrationEvent.Enabled = true`（默认 true） |
+| 灾难回滚 Bridge Hook | 各 `*Bridge:Enabled = false` → DI 注入对应 NoOp，全 hook 回 Skipped |
+| 仅暂停 Phase 7 QC 拦截 | 手动把 Stock 行的 QcStatus 改回 PENDING（前端有按钮）|
+| 关闭 Phase 9 自动写表 | OutboundService 改回原 throw 逻辑（git revert 单一 commit）|
+| 监控 Bridge Hook 健康 | 访问 `/wms/bridge-health` 看 24h 成功率 + 队列深度 + DLQ |
+
 
 ---
 
